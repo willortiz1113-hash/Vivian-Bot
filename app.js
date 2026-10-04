@@ -1,68 +1,34 @@
 const TelegramBot = require('node-telegram-bot-api');
-const { GoogleGenAI } = require('@google/genai');
-const axios = require('axios');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Inicializar Bot y Gemini usando las variables de entorno de Railway
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const token = process.env.TELEGRAM_BOT_TOKEN;
+const apiKey = process.env.GEMINI_API_KEY;
 
-console.log('🤖 Vivian está iniciándose...');
+if (!token || !apiKey) {
+  console.error("❌ ERROR: Faltan las variables TELEGRAM_BOT_TOKEN o GEMINI_API_KEY");
+  process.exit(1);
+}
 
-// Manejar todos los mensajes
+const bot = new TelegramBot(token, { polling: true });
+const genAI = new GoogleGenerativeAI(apiKey);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+console.log("🤖 Vivian está iniciándose correctamente...");
+
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
+  const text = msg.text;
 
-  // 1. Mensajes de texto
-  if (msg.text) {
-    if (msg.text === '/start') {
-      return bot.sendMessage(chatId, '¡Hola! Soy Vivian, tu asistente personal. ¿En qué te puedo ayudar hoy?');
-    }
+  if (!text) return;
 
-    try {
-      await bot.sendChatAction(chatId, 'typing');
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: msg.text,
-      });
-
-      bot.sendMessage(chatId, response.text);
-    } catch (error) {
-      console.error('Error al procesar texto:', error);
-      bot.sendMessage(chatId, 'Ocurrió un error al procesar tu mensaje.');
-    }
-  }
-
-  // 2. Mensajes de voz / Audio
-  if (msg.voice) {
-    try {
-      await bot.sendChatAction(chatId, 'typing');
-
-      // Descargar el audio desde Telegram
-      const fileId = msg.voice.file_id;
-      const fileLink = await bot.getFileLink(fileId);
-
-      const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
-      const audioBuffer = Buffer.from(response.data);
-
-      // Enviar audio a Gemini
-      const aiResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [
-          {
-            inlineData: {
-              mimeType: msg.voice.mime_type || 'audio/ogg',
-              data: audioBuffer.toString('base64'),
-            },
-          },
-          'Escucha esta nota de voz y responde de manera clara y amigable como Vivian, la asistente personal.',
-        ],
-      });
-
-      bot.sendMessage(chatId, aiResponse.text);
-    } catch (error) {
-      console.error('Error al procesar nota de voz:', error);
-      bot.sendMessage(chatId, 'No pude procesar tu nota de voz.');
-    }
+  try {
+    const result = await model.generateContent(text);
+    const response = await result.response;
+    bot.sendMessage(chatId, response.text());
+  } catch (error) {
+    console.error("Error al procesar mensaje con Gemini:", error);
+    bot.sendMessage(chatId, "Ups, tuve un problema al procesar tu solicitud.");
   }
 });
+
 
